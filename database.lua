@@ -24,7 +24,7 @@ if not pfQuestConfig.path then
   pfQuestConfig.path = "Interface\\AddOns\\pfQuest"
 end
 
-pfDatabase = { icons = {} }
+pfDatabase = { icons = {}, iconsByID = {} }
 
 local loc = GetLocale()
 local dbs =
@@ -285,7 +285,11 @@ pfDatabase.tracking:SetScript("OnEvent", function()
 
   -- enable all tracked
   for name, data in pairs(pfQuest_track) do
-    pfDatabase:SearchMetaRelation(data[1], data[2])
+    local restored = type(pfDatabase.SearchMetaRelationHDB) == "function"
+      and pfDatabase:SearchMetaRelationHDB(data[1], data[2], function(nativeMaps, err)
+        if err or not nativeMaps then pfDatabase:SearchMetaRelation(data[1], data[2]) end
+      end)
+    if not restored then pfDatabase:SearchMetaRelation(data[1], data[2]) end
   end
 
   -- remove events
@@ -390,6 +394,16 @@ end)
 -- check for unlocalized servers and fallback to enUS databases when the server
 -- returns item names that are different to the database ones. (check via. Hearthstone)
 CreateFrame("Frame", "pfQuestLocaleCheck", UIParent):SetScript("OnUpdate", function()
+  -- The HDB companion loads after pfQuest because it depends on it. Detect it
+  -- on the first update and finish initialization without waiting for an item
+  -- name that is intentionally absent from the unloaded Lua locale tables.
+  if pfQuestHearthDB and type(pfQuestHearthDB.GetQuestMapPinsAsync) == "function" then
+    pfDatabase.localized = true
+    pfDatabase:BuildNameIndex()
+    pfDatabase:BuildStaticRejectSet()
+    this:Hide()
+    return
+  end
   -- throttle to to one item per second
   if (this.tick or 0) > GetTime() then
     return
@@ -452,6 +466,10 @@ end)
 -- sanity check the databases
 if isempty(pfDB["quests"]["loc"]) then
   CreateFrame("Frame"):SetScript("OnUpdate", function()
+    if pfQuestHearthDB and type(pfQuestHearthDB.GetQuestMapPinsAsync) == "function" then
+      this:Hide()
+      return
+    end
     if GetTime() < 3 then
       return
     end
@@ -588,6 +606,83 @@ local function clear_parse_obj()
   for k in pairs(parse_obj["I"]) do
     parse_obj["I"][k] = nil
   end
+end
+
+-- Count a specific item across carried bags. Some 1.12 client builds report
+-- only one stack in GetQuestLogLeaderBoard after a stack split; the map must
+-- use the player's real carried total for item objective completion.
+local function CountCarriedItem(itemID)
+  local total = 0
+  for bag = 0, 4 do
+    local slots = GetContainerNumSlots(bag) or 0
+    for slot = 1, slots do
+      local link = GetContainerItemLink(bag, slot)
+      local _, _, linkedID = link and strfind(link, "item:(%d+)")
+      if linkedID and tonumber(linkedID) == itemID then
+        local _, count = GetContainerItemInfo(bag, slot)
+        total = total + (count or 1)
+      end
+    end
+  end
+  return total
+end
+
+-- Small public snapshot used by the optional HDB active-quest adapter. The
+-- standard SearchQuestID path retains its reusable table and hot-path logic.
+function pfDatabase:GetQuestObjectiveStates(qlogid, identity)
+  local states = { U = {}, O = {}, I = {} }
+  local _, _, _, _, _, complete = compat.GetQuestLogTitle(qlogid)
+  if complete then return states, true end
+
+  local objectives = GetNumQuestLeaderBoards(qlogid) or 0
+  -- Match normal SearchQuestID: some 1.12 clients remove completed rows,
+  -- leaving zero leaderboards when a quest is ready to hand in.
+  local allDone = objectives == 0 or objectives > 0
+  for index = 1, objectives do
+    local text, kind, done = GetQuestLogLeaderBoard(index, qlogid)
+    if not done then allDone = false end
+    if kind == "monster" then
+      local _, _, name, current, needed = strfind(text, pfUI.api.SanitizePattern(QUEST_MONSTERS_KILLED))
+      local state = ((current and needed and current + 0 >= needed + 0) or done) and "DONE" or "PROG"
+      if name then
+        local matched
+        for pinIndex = 1, table.getn(identity and identity.pins or {}) do
+          local pin = identity.pins[pinIndex]
+          local originKind = pin.originKind or pin.targetKind
+          local originID = pin.originID or pin.targetID
+          if (originKind == "U" or originKind == "O") and pin.title == name and originID then
+            states[originKind][originID] = state
+            matched = true
+          end
+        end
+        if not matched then
+          for id in pairs(pfDatabase:GetIDByName(name, "units")) do states.U[id] = state end
+          for id in pairs(pfDatabase:GetIDByName(name, "objects")) do states.O[id] = state end
+        end
+      end
+    elseif kind == "item" then
+      local _, _, name, current, needed = strfind(text, pfUI.api.SanitizePattern(QUEST_OBJECTS_FOUND))
+      if name then
+        local matched
+        local itemIDs = {}
+        for pinIndex = 1, table.getn(identity and identity.pins or {}) do
+          local pin = identity.pins[pinIndex]
+          if pin.originKind == "I" and pin.itemTitle == name and pin.originID then
+            itemIDs[pin.originID] = true
+            matched = true
+          end
+        end
+        if not matched then itemIDs = pfDatabase:GetIDByName(name, "items") end
+        for id in pairs(itemIDs) do
+          local carried = CountCarriedItem(id)
+          local state = ((needed and carried >= needed + 0)
+            or (current and needed and current + 0 >= needed + 0) or done) and "DONE" or "PROG"
+          states.I[id] = state
+        end
+      end
+    end
+  end
+  return states, allDone and true or false
 end
 
 -- Pre-defined vertex color tables (avoid creating new tables each quest)
@@ -1210,16 +1305,23 @@ function pfDatabase:TrackMeta(list, state)
     end
   end
 
-  -- save and perform the actual meta tracking
+  -- Save first; native tracking renders asynchronously but preserves the same
+  -- persistent state and falls back to Lua whenever HearthDB cannot answer.
   pfQuest_track[list] = { query, meta }
-  local maps = pfDatabase:SearchMetaRelation(query, meta)
-
-  -- remove invalid results
-  if not maps then
-    pfQuest_track[list] = nil
+  if type(pfDatabase.SearchMetaRelationHDB) == "function" then
+    local accepted = pfDatabase:SearchMetaRelationHDB(query, meta, function(nativeMaps, err)
+      if err or not nativeMaps then
+        local fallback = pfDatabase:SearchMetaRelation(query, meta)
+        if not fallback then pfQuest_track[list] = nil end
+        pfMap:ShowMapID(pfDatabase:GetBestMap(fallback))
+      else
+        pfMap:ShowMapID(pfDatabase:GetBestMap(nativeMaps))
+      end
+    end)
+    if accepted then return {} end
   end
-
-  -- return map results
+  local maps = pfDatabase:SearchMetaRelation(query, meta)
+  if not maps then pfQuest_track[list] = nil end
   return maps
 end
 
@@ -2065,6 +2167,8 @@ function pfDatabase:AddCustomIcon(id, img, root)
   end
 
   root = root and root .. "\\" or pfQuestConfig.path .. "\\"
+  local kind = id < 0 and "O" or "U"
+  pfDatabase.iconsByID[kind .. math.abs(id)] = root .. img
 
   local object = pfDB["objects"]["loc"][math.abs(id)]
   local unit = pfDB["units"]["loc"][math.abs(id)]
@@ -2162,6 +2266,12 @@ function pfDatabase:GetQuestIDs(qid, preserveQuestLogSelection)
   local titleKey = "title-v2:" .. title .. ":" .. (level or "")
   if pfQuest_questcache[titleKey] and pfQuest_questcache[titleKey][1] then
     return pfQuest_questcache[titleKey]
+  end
+
+  if type(pfDatabase.ResolveQuestLogIDHDB) == "function" then
+    local resolvedID, pending = pfDatabase:ResolveQuestLogIDHDB(qid, title, level, preserveQuestLogSelection)
+    if resolvedID then return { [1] = resolvedID } end
+    if pending then return end
   end
 
   local titleCandidates = pfDatabase.nameIndex.quests and pfDatabase.nameIndex.quests[title]

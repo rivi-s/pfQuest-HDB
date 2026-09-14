@@ -634,13 +634,24 @@ function pfMap:AddNode(meta)
     return
   end
 
+  local addon = meta["addon"] or "PFDB"
+  if addon == "PFQUEST"
+    and pfQuest_config and pfQuest_config["hdbactivequest"] == "1"
+    and meta.questid
+    and (not meta.spawn or meta.spawn == UNKNOWN)
+  then
+    -- An asynchronous HDB refresh can overlap a legacy fallback that no
+    -- longer has the unloaded entity tables available. Never let that
+    -- incomplete placeholder replace or cover the map-ready HDB node.
+    return
+  end
+
   -- only compute description if the caller hasn't already done it
   -- (SearchMobID / SearchObjectID hoist this call outside their coord loops)
   if meta["description"] == nil then
     meta["description"] = pfDatabase:BuildQuestDescription(meta)
   end
 
-  local addon = meta["addon"] or "PFDB"
   local map = meta["zone"]
   local coords = meta["x"] .. "|" .. meta["y"]
   local title = meta["title"]
@@ -714,11 +725,36 @@ function pfMap:AddNode(meta)
       return
     end
 
+    local existing = pfMap.nodes[addon][map][coords][title]
+    local richerReplacement = existing
+      and (not existing.spawn or existing.spawn == UNKNOWN)
+      and meta.spawn and meta.spawn ~= UNKNOWN
+
+    -- Unified world-map clusters keep their own metadata copy. When an
+    -- asynchronous provider replaces an early placeholder, refresh that copy
+    -- as well or tooltip extensions will continue to see spawn="Unknown".
+    if richerReplacement and unifiedcache[title] and unifiedcache[title][map] then
+      for _, cluster in pairs(unifiedcache[title][map]) do
+        local sameCoordinate = false
+        for _, point in ipairs(cluster.coords or {}) do
+          if tonumber(point[1]) == tonumber(meta.x) and tonumber(point[2]) == tonumber(meta.y) then
+            sameCoordinate = true
+            break
+          end
+        end
+        if sameCoordinate and cluster.meta
+          and (not cluster.meta.spawn or cluster.meta.spawn == UNKNOWN) then
+          for key, value in pairs(meta) do cluster.meta[key] = value end
+        end
+      end
+    end
+
     if
       pfMap.nodes[addon][map][coords][title]
       and pfMap.nodes[addon][map][coords][title].layer
       and layer
       and pfMap.nodes[addon][map][coords][title].layer >= layer
+      and not richerReplacement
     then
       -- identical node already exists, exit here
       return
@@ -811,6 +847,7 @@ function pfMap:GetNodes(addon, title)
 end
 
 function pfMap:DeleteNode(addon, title)
+  if addon == "PFQUEST" and title then unifiedcache[title] = nil end
   if not addon then
     -- wipe everything
     pfMap.tooltips = {}
@@ -820,10 +857,12 @@ function pfMap:DeleteNode(addon, title)
     pfMap.dirtyNodes = {}
     pfMap.dirtyMinimapNodes = {}
     pfMap.dirtyMaps = {}
+    for cachedTitle in pairs(unifiedcache) do unifiedcache[cachedTitle] = nil end
   elseif not title then
     -- wipe all nodes for this addon; clean up both reverse indexes
     if pfMap.titleIndex[addon] then
       for t, maps in pairs(pfMap.titleIndex[addon]) do
+        if addon == "PFQUEST" then unifiedcache[t] = nil end
         -- clean tooltipIndex entries that belonged to this addon's titles
         local spawns = pfMap.tooltipIndex[t]
         if spawns then
@@ -1380,6 +1419,33 @@ function pfMap:UpdateNodes()
         pfMap.currentZoneTracker[map][questid] = nil
       end
     end
+  end
+
+  -- Quest events also fire while the world map is closed. Rebuilding every
+  -- hidden world-map frame in that state caused a visible accept/abandon
+  -- hitch. Refresh only the quest tracker here; minimap pins have their own
+  -- updater, and dirtyMaps keeps the full world-map render pending until the
+  -- player actually opens it.
+  if not WorldMapFrame:IsShown() then
+    local questNodes = pfMap.nodes.PFQUEST and pfMap.nodes.PFQUEST[map]
+    for coords, node in pairs(questNodes or {}) do
+      local x, y
+      if coord_cache[coords] then
+        x, y = coord_cache[coords][1], coord_cache[coords][2]
+      else
+        local _, _, strx, stry = strfind(coords, "(.*)|(.*)")
+        x, y = strx + 0, stry + 0
+        coord_cache[coords] = { x, y }
+      end
+      for title, meta in pairs(node) do
+        pfQuest.tracker.ButtonAdd(title, meta)
+        pfQuest.tracker.RegisterQuestPoint(title, meta, x, y)
+      end
+    end
+    if pfQuest.tracker and pfQuest.tracker.DoLayout then
+      pfQuest.tracker.DoLayout()
+    end
+    return
   end
 
   -- A tracker/UI refresh can call UpdateNodes without changing any map node.

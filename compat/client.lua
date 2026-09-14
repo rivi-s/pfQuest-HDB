@@ -45,11 +45,13 @@ if client >= 30300 then
 end
 
 -- vanilla+tbc+wotlk: base function to insert quest links to the chat
-pfQuestCompat.InsertQuestLink = function(questid, name)
+pfQuestCompat.InsertQuestLink = function(questid, name, knownLevel)
   local questid = tonumber(questid) or 0
   local fallback = name or UNKNOWN
-  local level = pfDB["quests"]["data"][questid] and pfDB["quests"]["data"][questid]["lvl"] or 0
-  local name = pfDB["quests"]["loc"][questid] and pfDB["quests"]["loc"][questid]["T"] or fallback
+  local level = knownLevel
+    or (pfDB["quests"]["data"][questid] and pfDB["quests"]["data"][questid]["lvl"])
+    or 0
+  local name = name or (pfDB["quests"]["loc"][questid] and pfDB["quests"]["loc"][questid]["T"]) or fallback
   local hex = pfUI.api.rgbhex(pfQuestCompat.GetDifficultyColor(level))
 
   ChatFrameEditBox:Show()

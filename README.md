@@ -6,7 +6,7 @@ tracking, and command interface while moving the large gameplay database out of
 Lua and into SQLite.
 
 This is an early English-only alpha. It is intended for testing with a client
-that has HearthDB support installed. The regular pfQuest addon does not need
+that has [HearthDB](https://github.com/copypasteonly/HearthDB) support installed. The regular pfQuest addon does not need
 HearthDB; use the [live pfQuest project](https://github.com/rivi-s/pfQuest)
 if you want the established Lua-database release.
 
@@ -50,7 +50,7 @@ The provider folder must contain the packaged database at:
 pfQuest-HearthDB/data/pfquest.sqlite
 ```
 
-Install the compatible HearthDB client component, copy both addon folders into
+Install the compatible [HearthDB client component](https://github.com/copypasteonly/HearthDB), copy both addon folders into
 `Interface/AddOns`, and restart the game. Do not install regular pfQuest beside
 pfQuest-HDB because both editions use the `pfQuest` addon folder and saved
 variable names.

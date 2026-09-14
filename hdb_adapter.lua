@@ -7,8 +7,7 @@ local questIdentityPending = {}
 local questIdentityFailed = {}
 
 local function Enabled()
-  return pfQuest_config and pfQuest_config["hdbactivequest"] == "1"
-    and type(pfQuestHearthDB) == "table"
+  return type(pfQuestHearthDB) == "table"
     and type(pfQuestHearthDB.GetQuestMapPinsAsync) == "function"
 end
 

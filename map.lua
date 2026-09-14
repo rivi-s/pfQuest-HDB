@@ -636,7 +636,8 @@ function pfMap:AddNode(meta)
 
   local addon = meta["addon"] or "PFDB"
   if addon == "PFQUEST"
-    and pfQuest_config and pfQuest_config["hdbactivequest"] == "1"
+    and type(pfQuestHearthDB) == "table"
+    and type(pfQuestHearthDB.GetQuestMapPinsAsync) == "function"
     and meta.questid
     and (not meta.spawn or meta.spawn == UNKNOWN)
   then

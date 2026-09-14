@@ -1002,8 +1002,25 @@ end
 -- start pins grouped by quest, so update only the affected entry.
 function pfDatabase:MarkQuestAcceptedHDB(id)
   if not Enabled() then return false end
-  hdbQuestGiverSet[tonumber(id)] = nil
-  return true
+  local questID = tonumber(id)
+  if questID then
+    hdbQuestGiverSet[questID] = nil
+    return true
+  end
+
+  -- The first quest-log scan can run before an asynchronous title lookup has
+  -- resolved the numeric ID. In that case the queue deliberately carries the
+  -- visible title as its temporary identity. Remove the matching cached giver
+  -- entries by title and keep their pin lists available in case the quest is
+  -- abandoned later.
+  if type(id) == "string" and id ~= "" then
+    for cachedID, title in pairs(hdbQuestGiverSet) do
+      if title == id then hdbQuestGiverSet[cachedID] = nil end
+    end
+    return true
+  end
+
+  return false
 end
 
 function pfDatabase:RestoreAbandonedQuestGiverHDB(id, meta)

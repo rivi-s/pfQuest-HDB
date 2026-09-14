@@ -466,11 +466,23 @@ end)
 -- sanity check the databases
 if isempty(pfDB["quests"]["loc"]) then
   CreateFrame("Frame"):SetScript("OnUpdate", function()
-    if pfQuestHearthDB and type(pfQuestHearthDB.GetQuestMapPinsAsync) == "function" then
+    local hdbEdition = type(pfDatabase.SearchQuestGiversHDB) == "function"
+    if hdbEdition and pfQuestHearthDB
+      and type(pfQuestHearthDB.GetQuestMapPinsAsync) == "function" then
       this:Hide()
       return
     end
     if GetTime() < 3 then
+      return
+    end
+    if hdbEdition then
+      DEFAULT_CHAT_FRAME:AddMessage(
+        "|cffff5555pfQuest-HDB:|cffffcccc HearthDB provider addon is not loaded."
+      )
+      DEFAULT_CHAT_FRAME:AddMessage(
+        "|cffffccccInstall the provider from the matching pfQuest-HDB release and run /pfqhdb."
+      )
+      this:Hide()
       return
     end
     DEFAULT_CHAT_FRAME:AddMessage(

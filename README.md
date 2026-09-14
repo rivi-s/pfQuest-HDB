@@ -1,4 +1,97 @@
-# pfQuest
+# pfQuest-HDB
+
+pfQuest-HDB is the HearthDB edition of pfQuest for World of Warcraft 1.12. It
+keeps pfQuest's maps, quest tracker, journal, database browser, gathering
+tracking, and command interface while moving the large gameplay database out of
+Lua and into SQLite.
+
+This is an early English-only alpha. It is intended for testing with a client
+that has HearthDB support installed. The regular pfQuest addon does not need
+HearthDB; use the [live pfQuest project](https://github.com/rivi-s/pfQuest)
+if you want the established Lua-database release.
+
+## Why an HDB edition?
+
+Regular pfQuest loads its complete data set as Lua during login. This edition
+keeps only the small tables needed for map presentation in Lua and requests
+quests, units, objects, items, spawns, and search results from SQLite as they are
+needed. Queries are asynchronous so database work does not freeze a frame.
+
+The first request for some data may appear a moment later while HearthDB returns
+it. Results are cached for the rest of the session. Quest acceptance, objective
+updates, map pins, minimap pins, the journal, browser searches, tooltips, and
+gathering routes have all been adapted to that model.
+
+## Alpha scope
+
+- Vanilla 1.12 client
+- English (`enUS`) data and matching only
+- Vanilla content database
+- HearthDB required
+- Version `0.1.0-alpha.1`
+
+Other locales can use the same provider interface and database schema, but their
+database packages are planned for a later testing round.
+
+## Install
+
+Use a packaged alpha release when one is available. A complete installation has
+two addon folders:
+
+```text
+Interface/AddOns/pfQuest
+Interface/AddOns/pfQuest-HearthDB
+```
+
+The provider folder must contain the packaged database at:
+
+```text
+pfQuest-HearthDB/data/pfquest.sqlite
+```
+
+Install the compatible HearthDB client component, copy both addon folders into
+`Interface/AddOns`, and restart the game. Do not install regular pfQuest beside
+pfQuest-HDB because both editions use the `pfQuest` addon folder and saved
+variable names.
+
+Run `/pfqhdb` in game to see whether the provider and database opened correctly.
+Run `/pfqhdb cacheclear` to clear the provider's session caches while testing.
+
+## Reporting alpha bugs
+
+Please include:
+
+- what you clicked or which quest you accepted
+- the quest, unit, object, or item name
+- the zone and whether the problem was on the world map, minimap, tracker, or browser
+- whether it happens again after `/reload`
+- the full Lua error, if one appeared
+
+For a delay or frame hitch, mention whether it happened only on the first lookup
+or on every attempt. That distinction helps separate an uncached database query
+from repeated UI work.
+
+## Building the English database
+
+The provider source and build tool are included under `provider/`. Generated
+SQLite files are release artifacts and are intentionally excluded from Git.
+
+```sh
+cd provider
+python3 tools/build_database.py \
+  --source /path/to/pfQuest-HDB \
+  --locales enUS \
+  --output data/pfquest.sqlite
+sqlite3 data/pfquest.sqlite 'PRAGMA integrity_check;'
+```
+
+See [HDB.md](HDB.md) and [provider/README.md](provider/README.md) for the package
+layout and provider details.
+
+## About pfQuest
+
+The sections below describe the original pfQuest interface retained by this
+edition.
 
 <img src="https://raw.githubusercontent.com/The-Kludge-Bureau/pfQuest/main/_img/mode.png" float="right" align="right" width="25%">
 

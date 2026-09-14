@@ -35,8 +35,9 @@ database packages are planned for a later testing round.
 
 ## Install
 
-Use a packaged alpha release when one is available. A complete installation has
-two addon folders:
+Download the ready-to-install ZIP from the
+[Releases page](https://github.com/rivi-s/pfQuest-HDB/releases). A complete
+installation has two addon folders:
 
 ```text
 Interface/AddOns/pfQuest

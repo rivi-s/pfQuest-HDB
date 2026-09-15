@@ -140,8 +140,15 @@ end
 pfQuest.queue = {}
 pfQuest.queueCount = 0 -- Track queue size to avoid O(n) tsize() calls
 pfQuest.abandon = ""
+pfQuest.abandonID = nil
 pfQuest.questlog = {}
 pfQuest.questlog_tmp = {}
+
+-- Quest history is keyed by numeric database ID. Older HDB alpha builds could
+-- accidentally record a temporary same-title identity as a string.
+for historyID in pairs(pfQuest_history or {}) do
+  if type(historyID) ~= "number" then pfQuest_history[historyID] = nil end
+end
 
 local function GetCanonicalQuestTitle(id)
   if pfDatabase and type(pfDatabase.GetQuestTitleHDB) == "function" then
@@ -367,17 +374,39 @@ pfQuest:SetScript("OnUpdate", function()
       end
     end
 
+    -- Async same-title resolution first indexes a log entry by its visible
+    -- title, then replaces that temporary key with the numeric quest ID. The
+    -- old key appears in the queue as REMOVE even though the quest is still
+    -- active. Do not let that bookkeeping transition erase nodes just rendered
+    -- for the resolved ID (both entries deliberately share the same title).
+    local identityRekey = false
+    if entry[4] == "REMOVE" and type(entry[2]) == "string" then
+      for activeID, active in pairs(pfQuest.questlog or {}) do
+        if type(activeID) == "number" and active and active.title == entry[1] then
+          identityRekey = true
+          break
+        end
+      end
+    end
+
     -- remove quest
-    if entry[4] == "REMOVE" then
+    if identityRekey then
+      pfQuest:Debug("HearthDB resolved quest identity: " .. entry[1])
+    elseif entry[4] == "REMOVE" then
       local canonicalTitle = GetCanonicalQuestTitle(entry[2])
       local abandoned = entry[1] == pfQuest.abandon
+        or (pfQuest.abandonID and tonumber(entry[2]) == pfQuest.abandonID)
       pfDatabase:ClearQuestHDBCache(entry[2])
       pfQuest:Debug("|cffff5555Remove Quest: " .. entry[1] .. " (" .. entry[2] .. ")")
 
       -- write pfQuest.questlog history
       if abandoned then
         pfQuest_history[entry[2]] = nil
-      else
+      elseif not (pfQuestCompat.optional and pfQuestCompat.optional.questEvents) then
+        -- Legacy clients expose only a generic log removal, so completion must
+        -- still be inferred there. Enhanced clients report QUEST_TURNED_IN with
+        -- the exact numeric ID above; do not let an unrelated removal or a
+        -- missed abandon marker create a false completion on those clients.
         pfQuest_history[entry[2]] = { time(), UnitLevel("player") }
       end
       -- Mark journal dirty when history changes
@@ -396,6 +425,7 @@ pfQuest:SetScript("OnUpdate", function()
       end
 
       pfQuest.abandon = ""
+      pfQuest.abandonID = nil
       if abandoned and type(pfDatabase.RestoreAbandonedQuestGiverHDB) == "function"
         and pfDatabase:RestoreAbandonedQuestGiverHDB(entry[2], { addon = "PFQUEST" }) then
         -- The single cached quest was restored without scanning every giver.
@@ -1182,6 +1212,14 @@ end
 local HookAbandonQuest = AbandonQuest
 AbandonQuest = function()
   pfQuest.abandon = GetAbandonQuestName()
+  pfQuest.abandonID = nil
+  local selected = GetQuestLogSelection()
+  for questID, state in pairs(pfQuest.questlog or {}) do
+    if type(questID) == "number" and state and state.qlogid == selected then
+      pfQuest.abandonID = questID
+      break
+    end
+  end
   HookAbandonQuest()
 end
 

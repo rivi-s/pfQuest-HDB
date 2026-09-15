@@ -1325,9 +1325,6 @@ function pfDatabase:TrackMeta(list, state)
       if err or not nativeMaps then
         local fallback = pfDatabase:SearchMetaRelation(query, meta)
         if not fallback then pfQuest_track[list] = nil end
-        pfMap:ShowMapID(pfDatabase:GetBestMap(fallback))
-      else
-        pfMap:ShowMapID(pfDatabase:GetBestMap(nativeMaps))
       end
     end)
     if accepted then return {} end

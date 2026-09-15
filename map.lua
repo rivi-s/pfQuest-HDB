@@ -261,6 +261,24 @@ pfMap.minimap_zoom = minimap_zoom
 pfMap.minimap_sizes = minimap_sizes
 
 pfMap.tooltip = CreateFrame("Frame", "pfMapTooltip", GameTooltip)
+
+-- A creature can start or end several database quests with the same localized
+-- title. Once one of those IDs is active, only active IDs with that title
+-- belong in the unit tooltip; the other variants are old or future stages.
+local function IsCurrentGameTooltipQuest(meta)
+  local questid = meta and tonumber(meta.questid)
+  if not questid or not meta.quest then return true end
+  if pfQuest.questlog and pfQuest.questlog[questid] then return true end
+
+  for activeID, state in pairs((pfQuest and pfQuest.questlog) or {}) do
+    if type(activeID) == "number" and state and state.title == meta.quest then
+      return false
+    end
+  end
+
+  return not (pfQuest_history and pfQuest_history[questid])
+end
+
 pfMap.tooltip:SetScript("OnShow", function()
   local focus = GetMouseFocus()
   -- abort on pfQuest nodes
@@ -286,7 +304,14 @@ pfMap.tooltip:SetScript("OnShow", function()
   if pfMap.tooltips[name] and pfMap.tooltips[name] then
     for title, obj in pairs(pfMap.tooltips[name]) do
       if obj[zone] then
-        pfMap:ShowTooltip(obj[zone], GameTooltip)
+        if IsCurrentGameTooltipQuest(obj[zone]) then
+          pfMap:ShowTooltip(obj[zone], GameTooltip)
+        end
+        for _, variant in pairs(obj[zone].questVariants or {}) do
+          if IsCurrentGameTooltipQuest(variant) then
+            pfMap:ShowTooltip(variant, GameTooltip)
+          end
+        end
         GameTooltip:Show()
       end
     end
@@ -342,11 +367,16 @@ function pfMap:ShowTooltip(meta, tooltip)
 
   -- add quest data
   if meta["quest"] then
+    local metaQuestID = tonumber(meta["questid"])
+    local activeQuest = metaQuestID and pfQuest.questlog and pfQuest.questlog[metaQuestID]
     -- scan all quest entries for matches
     for qid = 1, GetNumQuestLogEntries() do
       local qtitle, _, _, _, _, complete = compat.GetQuestLogTitle(qid)
 
-      if meta["quest"] == qtitle then
+      local questMatches = meta["qlogid"] and meta["qlogid"] == qid
+        or (not meta["qlogid"] and activeQuest and activeQuest.qlogid == qid)
+        or (not meta["qlogid"] and not metaQuestID and meta["quest"] == qtitle)
+      if questMatches then
         -- handle active quests
         local objectives = GetNumQuestLeaderBoards(qid)
         catch = true
@@ -688,6 +718,14 @@ function pfMap:AddNode(meta)
 
   -- skip early on existing nodes
   if pfMap.nodes[addon][map][coords][title] then
+    local existing = pfMap.nodes[addon][map][coords][title]
+    if existing.questid and meta.questid and existing.questid ~= meta.questid then
+      existing.questVariants = existing.questVariants or {}
+      local variant = {}
+      for key, value in pairs(meta) do variant[key] = value end
+      variant.item = { [1] = item }
+      existing.questVariants[meta.questid] = variant
+    end
     if item and table.getn(pfMap.nodes[addon][map][coords][title].item) > 0 then
       -- check if item already exists
       for id, name in pairs(pfMap.nodes[addon][map][coords][title].item) do
@@ -974,6 +1012,9 @@ function pfMap:NodeEnter()
 
   for title, meta in pairs(this.node) do
     pfMap:ShowTooltip(meta, tooltip)
+    for _, variant in pairs(meta.questVariants or {}) do
+      pfMap:ShowTooltip(variant, tooltip)
+    end
   end
 
   -- add tooltip help if setting is enabled

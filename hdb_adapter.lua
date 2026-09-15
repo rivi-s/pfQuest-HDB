@@ -97,11 +97,14 @@ local function NormalizeQuestIdentityText(value)
   return string.lower(value)
 end
 
-local function CaptureQuestIdentityText(qlogid)
-  local oldID = GetQuestLogSelection()
-  SelectQuestLogEntry(qlogid)
-  local description, objective = GetQuestLogQuestText()
-  SelectQuestLogEntry(oldID)
+local function CaptureQuestIdentityText(qlogid, preserveSelection)
+  local description, objective = "", ""
+  if not preserveSelection then
+    local oldID = GetQuestLogSelection()
+    SelectQuestLogEntry(qlogid)
+    description, objective = GetQuestLogQuestText()
+    SelectQuestLogEntry(oldID)
+  end
   local targets = {}
   for index = 1, (GetNumQuestLeaderBoards(qlogid) or 0) do
     local text, kind = GetQuestLogLeaderBoard(index, qlogid)
@@ -136,11 +139,13 @@ function pfDatabase:ResolveQuestLogIDHDB(qlogid, title, level, preserveSelection
     return nil, false
   end
   if not candidates or table.getn(candidates) < 2 then return nil, false end
-  if preserveSelection then return nil, false end
 
-  local description, objective, liveTargets = CaptureQuestIdentityText(qlogid)
+  local description, objective, liveTargets = CaptureQuestIdentityText(qlogid, preserveSelection)
+  local targetKeys = {}
+  for label in pairs(liveTargets) do table.insert(targetKeys, label) end
+  table.sort(targetKeys)
   local observationKey = slotKey .. ":" .. NormalizeQuestIdentityText(objective)
-    .. ":" .. NormalizeQuestIdentityText(description)
+    .. ":" .. NormalizeQuestIdentityText(description) .. ":" .. table.concat(targetKeys, "|")
   if questIdentityCache[observationKey] then return questIdentityCache[observationKey], false end
   questIdentityPending[slotKey] = true
   local accepted = pfQuestHearthDB:GetQuestDisambiguationAsync(title, function(records, err)
@@ -162,9 +167,14 @@ function pfDatabase:ResolveQuestLogIDHDB(qlogid, title, level, preserveSelection
       for label in string.gfind(record.objectiveLabels or "", "([^|]+)") do
         if liveTargets[NormalizeQuestIdentityText(label)] then targetMatch = true break end
       end
+      local prerequisiteMatch = false
+      for prerequisite in string.gfind(record.prerequisites or "", "[^,]+") do
+        if pfQuest_history[tonumber(prerequisite)] then prerequisiteMatch = true break end
+      end
       if objectiveMatch then score = score + 4 end
       if descriptionMatch then score = score + 3 end
       if targetMatch then score = score + 5 end
+      if prerequisiteMatch then score = score + 6 end
       if tonumber(record.level) and tonumber(level) and tonumber(record.level) == tonumber(level) then score = score + 1 end
       if score > best then
         best, bestID, tied = score, record.id, false
@@ -941,13 +951,17 @@ function pfDatabase:SearchQuestGiversHDB(meta)
   local _, class = UnitClass("player")
   local request = hdbQuestGiverRequest + 1
   hdbQuestGiverRequest = request
+  local levelRange = pfQuest_config["questpinlevelrange"] or "off"
+  if levelRange == "all" then levelRange = "off" end
   local options = {
     level = UnitLevel("player"),
     highOffset = pfQuest_config["showhighlevel"] == "1" and 3 or 0,
     includeLow = pfQuest_config["showlowlevel"] == "1",
-    -- The native provider returns every level; the base applies the same
-    -- client difficulty filter used by normal pfQuest quest-giver pins.
-    includeAllLevels = true,
+    -- Normal mode can apply the ordinary high/low-level limits in SQLite and
+    -- avoid materializing thousands of pins that Lua will immediately reject.
+    -- An explicit difficulty range still needs the wider population because
+    -- its color rules are applied by FilterHDBAvailableStartPins below.
+    includeAllLevels = levelRange ~= "off",
     includeEvents = pfQuest_config["showfestival"] == "1",
     raceMask = pfDatabase:GetBitByRace(race),
     classMask = pfDatabase:GetBitByClass(class),

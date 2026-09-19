@@ -1,5 +1,9 @@
 # pfQuest base patch notes
 
+## 8.0.31 — 2026-09-19
+
+- Capped the quest-start/quest-end name list in the HDB extended tooltip so a widely shared quest-giver template no longer renders one line wider than the screen.
+
 ## 8.0.30 — 2026-09-13
 
 - Kept collapsed Quest Log categories closed when completing quests.

@@ -2,3 +2,6 @@ toolbox/git
 release/
 TODO
 .DS_Store
+
+# Generated databases belong to install bundles, not source history.
+provider/data/*.sqlite

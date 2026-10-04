@@ -28,7 +28,7 @@ gathering routes have all been adapted to that model.
 - English (`enUS`) data and matching only
 - Vanilla content database
 - HearthDB required
-- Version `0.1.0-alpha.15`
+- Version `0.2.0-beta.1`
 
 Other locales can use the same provider interface and database schema, but their
 database packages are planned for a later testing round.
@@ -287,3 +287,9 @@ The `mines` and `herbs` lists support an optional skill range and an `auto` shor
 ```
 
 Available tracking lists: `auctioneer`, `banker`, `battlemaster`, `chests`, `fish`, `flight`, `herbs`, `innkeeper`, `mailbox`, `meetingstone`, `mines`, `rares`, `repair`, `spirithealer`, `stablemaster`, `vendor`
+
+## Author credits
+
+Original pfQuest authors: Shagu and txtsd.
+
+Rivi maintains this fork and contributes ongoing fixes, features, quest database corrections, and HearthDB integration.

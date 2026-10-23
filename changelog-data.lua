@@ -1,5 +1,9 @@
 -- Published history and explicitly labeled development notes.
 pfQuestChangelog:Register("pfQuest", {
+{ ["version"] = "0.2.0-beta.6", ["date"] = "2026-10-23", ["notes"] = {
+"Retained item drop chances in shared objective summaries so nameplate icons can respect the configured minimum.",
+"Existing HearthDB DLL compatibility is unchanged; no DLL update is required."
+} },
 { ["version"] = "0.2.0-beta.5", ["date"] = "2026-10-18", ["notes"] = {
 "Improved login loading with fairer background processing, current-zone previews, and shared objective summaries.",
 "Reduced unnecessary allocations and repeated work while decoding targets and building available quest markers.",

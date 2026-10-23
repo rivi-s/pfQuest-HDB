@@ -1399,7 +1399,7 @@ function provider:GetQuestTargetsAsync(id, callback, limit, onPage)
             objectiveSeen[identity] = true
             table.insert(objectives, {phase = record.phase, targetKind = record.targetKind,
               targetID = record.targetID, originKind = record.originKind, originID = record.originID,
-              title = record.title, itemTitle = record.itemTitle})
+              title = record.title, itemTitle = record.itemTitle, chance = record.chance})
           end
         end
         table.insert(pageRecords, record)
